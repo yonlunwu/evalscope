@@ -123,7 +123,7 @@ async def statistic_benchmark_metric(benchmark_data_queue: asyncio.Queue, args: 
                     continue
 
                 # Update metrics and write to DB immediately
-                metrics.update_metrics(benchmark_data, api_plugin)
+                metrics.update_metrics(benchmark_data, api_plugin, getattr(args, 'server_side_timing', False))
                 insert_benchmark_data(cursor, benchmark_data)
                 processed_since_commit += 1
                 if processed_since_commit >= commit_every:

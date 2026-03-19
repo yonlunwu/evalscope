@@ -29,20 +29,26 @@ class BenchmarkData:
     prompt_tokens: Optional[int] = None
     completion_tokens: Optional[int] = None
 
-    def _calculate_tokens(self, api_plugin):
+    def _calculate_tokens(self, api_plugin, server_side_timing: bool = False):
         if self.prompt_tokens is None or self.completion_tokens is None:
             self.prompt_tokens, self.completion_tokens = api_plugin.parse_responses(
                 self.response_messages, request=self.request
             )
 
-        # Calculate time per output token
-        if self.completion_tokens and self.completion_tokens > 1:
-            # tpot = (latency - ttft) / (output_len - 1)
-            self.time_per_output_token = (self.query_latency - self.first_chunk_latency) / (self.completion_tokens - 1)
-
         # Ensure inter-chunk latency is available (compute from chunk_times if needed)
         if not self.inter_chunk_latency and self.chunk_times:
             self.inter_chunk_latency = [t2 - t1 for t1, t2 in zip(self.chunk_times[:-1], self.chunk_times[1:])]
+
+        # Calculate time per output token
+        if self.completion_tokens and self.completion_tokens > 1:
+            if server_side_timing and self.inter_chunk_latency:
+                # When server_side_timing is enabled, use average inter-chunk latency as TPOT
+                # This is more accurate than the end-to-end calculation as it uses
+                # the actual time between chunks received, not the total time minus TTFT
+                self.time_per_output_token = sum(self.inter_chunk_latency) / len(self.inter_chunk_latency)
+            else:
+                # Original formula: tpot = (latency - ttft) / (output_len - 1)
+                self.time_per_output_token = (self.query_latency - self.first_chunk_latency) / (self.completion_tokens - 1)
 
     def update_gpu_usage(self):
         if check_import('torch', raise_warning=False):
@@ -108,13 +114,13 @@ class BenchmarkMetrics:
     avg_inter_token_latency: float = -1
     qps: float = -1
 
-    def update_metrics(self, benchmark_data: BenchmarkData, api_plugin):
+    def update_metrics(self, benchmark_data: BenchmarkData, api_plugin, server_side_timing: bool = False):
         self.n_total_queries += 1
 
         if benchmark_data.success:
             self.n_succeed_queries += 1
 
-            benchmark_data._calculate_tokens(api_plugin)
+            benchmark_data._calculate_tokens(api_plugin, server_side_timing)
             self.n_total_prompt_tokens += benchmark_data.prompt_tokens
             self.n_total_completion_tokens += benchmark_data.completion_tokens
 

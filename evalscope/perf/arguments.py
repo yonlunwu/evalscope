@@ -214,6 +214,11 @@ class Arguments(BaseArgument):
     extra_args: Optional[Dict[str, Any]] = None
     """Extra arguments."""
 
+    server_side_timing: bool = False
+    """Use server-side timing for TPOT calculation when available.
+    When enabled, TPOT will be calculated using average inter-chunk latency,
+    which provides more accurate TPOT measurement similar to vllm bench."""
+
     def __post_init__(self):
         # Set the default headers
         self.headers = self.headers or {}  # Default to empty dictionary
@@ -380,6 +385,8 @@ def add_argument(parser: argparse.ArgumentParser):
     parser.add_argument('--top-p', type=float, help='Sampling top p', default=None)
     parser.add_argument('--top-k', type=int, help='Sampling top k', default=None)
     parser.add_argument('--extra-args', type=json.loads, default='{}', help='Extra arguments, should in JSON format',)
+    parser.add_argument('--server-side-timing', action='store_true', default=False,
+                        help='Use server-side timing for TPOT calculation. When enabled, TPOT will be calculated using average inter-chunk latency, similar to vllm bench.')
     # yapf: enable
 
 
