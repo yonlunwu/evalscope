@@ -99,6 +99,7 @@ class OpenAICompatibleAPI(ModelAPI):
             # handle streaming response
             if not isinstance(completion, ChatCompletion):
                 completion = collect_stream_response(completion)
+
             response = completion.model_dump()
             self.on_response(response)
 
@@ -108,6 +109,9 @@ class OpenAICompatibleAPI(ModelAPI):
 
         except (BadRequestError, UnprocessableEntityError, PermissionDeniedError) as ex:
             return self.handle_bad_request(ex)
+        except ValueError as ex:
+            logger.error(f'Model [{self.model_name}] returned an invalid response: {ex}')
+            raise
 
     def resolve_tools(self, tools: List[ToolInfo], tool_choice: ToolChoice,
                       config: GenerateConfig) -> Tuple[List[ToolInfo], ToolChoice, GenerateConfig]:
