@@ -1,17 +1,11 @@
 # Copyright (c) Alibaba, Inc. and its affiliates.
 """Flask service for EvalScope evaluation and performance testing."""
+import multiprocessing
 from datetime import datetime
 from flask import Flask, jsonify
 
 from evalscope.utils.logger import get_logger
-
-# Support two deployment modes:
-#   1. Installed package  → relative imports work (evalscope.service.*)
-#   2. Flat /code/ copy   → no parent package; pin /code/ first in sys.path
-try:
-    from .blueprints import bp_eval, bp_perf
-except ImportError:
-    from blueprints import bp_eval, bp_perf  # type: ignore[no-redef]
+from .blueprints import bp_eval, bp_perf
 
 logger = get_logger()
 
@@ -62,6 +56,10 @@ def create_app():
 
 def run_service(host: str = '0.0.0.0', port: int = 9000, debug: bool = False):
     """Run the Flask service."""
+
+    # Force the multiprocessing start method to 'spawn' to avoid issues with
+    # model loading in forked child processes on some platforms.
+    multiprocessing.set_start_method('spawn', force=True)
     app = create_app()
 
     logger.info(f'Starting EvalScope service on {host}:{port}')

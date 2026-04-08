@@ -6,25 +6,7 @@ from tabulate import tabulate
 from evalscope.perf.arguments import Arguments as PerfArguments
 from evalscope.perf.utils.rich_display import analyze_results
 from evalscope.utils.logger import get_logger
-
-try:
-    from ..utils import (
-        OUTPUT_DIR,
-        create_log_file,
-        get_log_content,
-        run_in_subprocess,
-        run_perf_wrapper,
-        validate_task_id,
-    )
-except ImportError:
-    from utils import (  # type: ignore[no-redef]
-        OUTPUT_DIR,
-        create_log_file,
-        get_log_content,
-        run_in_subprocess,
-        run_perf_wrapper,
-        validate_task_id,
-    )
+from ..utils import OUTPUT_DIR, create_log_file, get_log_content, run_in_subprocess, run_perf_wrapper, validate_task_id
 
 logger = get_logger()
 
@@ -86,6 +68,7 @@ def run_performance_test():
     perf_args.outputs_dir = os.path.join(OUTPUT_DIR, task_id)
     perf_args.name = 'perf'
     perf_args.enable_progress_tracker = True
+    perf_args.no_test_connection = True
 
     logger.info(f'[{task_id}] Running performance benchmark for model: {perf_args.model}')
     logger.info(f'[{task_id}] URL: {perf_args.url}')
@@ -137,10 +120,11 @@ def get_performance_log():
         task_id = request.args.get('task_id')
         start_line = request.args.get('start_line', 0, type=int)
 
-        content = get_log_content(task_id, os.path.join('perf', 'benchmark.log'), start_line)
+        try:
+            content = get_log_content(task_id, os.path.join('perf', 'benchmark.log'), start_line)
+        except FileNotFoundError:
+            content = ''
         return content, 200, {'Content-Type': 'text/plain; charset=utf-8'}
-    except FileNotFoundError as e:
-        return jsonify({'error': str(e)}), 404
     except Exception as e:
         logger.error(f'Failed to get performance log: {str(e)}')
         return jsonify({'error': str(e)}), 500
@@ -163,7 +147,7 @@ def get_performance_progress():
             progress = json.load(f)
         return jsonify(progress), 200
     except FileNotFoundError:
-        return jsonify({'error': f'Progress not found for task_id: {task_id}'}), 404
+        return jsonify({'percent': 0.0}), 200
     except Exception as e:
         logger.error(f'Failed to get progress for task {task_id}: {e}')
         return jsonify({'error': str(e)}), 500

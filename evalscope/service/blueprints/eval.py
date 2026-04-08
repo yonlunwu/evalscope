@@ -1,5 +1,6 @@
 import json
 import os
+import pandas as pd
 from flask import Blueprint, current_app, jsonify, request, send_file
 from tabulate import tabulate
 from typing import Any, Dict, List
@@ -8,31 +9,17 @@ from evalscope.config import TaskConfig
 from evalscope.constants import EvalType
 from evalscope.report.combinator import get_data_frame, get_report_list
 from evalscope.utils.logger import get_logger
-
-try:
-    from ..utils import (
-        DEFAULT_MULTIMODAL_BENCHMARKS,
-        DEFAULT_TEXT_BENCHMARKS,
-        OUTPUT_DIR,
-        build_benchmark_entry,
-        create_log_file,
-        get_log_content,
-        run_eval_wrapper,
-        run_in_subprocess,
-        validate_task_id,
-    )
-except ImportError:
-    from utils import (  # type: ignore[no-redef]
-        DEFAULT_MULTIMODAL_BENCHMARKS,
-        DEFAULT_TEXT_BENCHMARKS,
-        OUTPUT_DIR,
-        build_benchmark_entry,
-        create_log_file,
-        get_log_content,
-        run_eval_wrapper,
-        run_in_subprocess,
-        validate_task_id,
-    )
+from ..utils import (
+    DEFAULT_MULTIMODAL_BENCHMARKS,
+    DEFAULT_TEXT_BENCHMARKS,
+    OUTPUT_DIR,
+    build_benchmark_entry,
+    create_log_file,
+    get_log_content,
+    run_eval_wrapper,
+    run_in_subprocess,
+    validate_task_id,
+)
 
 logger = get_logger()
 
@@ -59,14 +46,23 @@ def _build_result_table(work_dir: str) -> str:
         if not report_list:
             return ''
         df = get_data_frame(report_list, flatten_metrics=True, flatten_categories=True)
+        _CAT_LEVEL_NAMES = ['类别', '子类别', '细分类别']
         new_cols = {}
         for col in df.columns:
             if col in _COLUMN_ZH:
                 new_cols[col] = _COLUMN_ZH[col]
             elif col.startswith('Cat.'):
-                new_cols[col] = col.replace('Cat.', '类别')
+                try:
+                    level = int(col[4:])
+                    new_cols[col] = _CAT_LEVEL_NAMES[level] if level < len(_CAT_LEVEL_NAMES) else f'类别{level}'
+                except ValueError:
+                    new_cols[col] = col.replace('Cat.', '类别')
         df = df.rename(columns=new_cols)
-        return tabulate(df, headers=df.columns, tablefmt='pipe', showindex=False)
+        score_col = _COLUMN_ZH.get('Score', 'Score')
+        if score_col in df.columns:
+            df[score_col] = pd.to_numeric(df[score_col],
+                                          errors='coerce').map(lambda x: f'{x:.4f}' if pd.notna(x) else '')
+        return tabulate(df, headers=df.columns, tablefmt='pipe', showindex=False, disable_numparse=True)
     except Exception as e:
         logger.warning(f'Failed to build result table: {e}')
         return ''
@@ -171,6 +167,7 @@ def resume_evaluation():
         return jsonify({'error': f'Output directory not found for task_id: {task_id}'}), 404
 
     task_config = _build_task_config(data)
+    task_config.work_dir = work_dir
     task_config.use_cache = work_dir
     task_config.rerun_review = True
 
@@ -197,7 +194,7 @@ def get_evaluation_progress():
             progress = json.load(f)
         return jsonify(progress), 200
     except FileNotFoundError:
-        return jsonify({'error': f'Progress not found for task_id: {task_id}'}), 404
+        return jsonify({'percent': 0.0}), 200
     except Exception as e:
         logger.error(f'Failed to get progress for task {task_id}: {e}')
         return jsonify({'error': str(e)}), 500
@@ -238,10 +235,11 @@ def get_evaluation_log():
         task_id = request.args.get('task_id')
         start_line = request.args.get('start_line', 0, type=int)
 
-        content = get_log_content(task_id, os.path.join('logs', 'eval_log.log'), start_line)
+        try:
+            content = get_log_content(task_id, os.path.join('logs', 'eval_log.log'), start_line)
+        except FileNotFoundError:
+            content = ''
         return content, 200, {'Content-Type': 'text/plain; charset=utf-8'}
-    except FileNotFoundError as e:
-        return jsonify({'error': str(e)}), 404
     except Exception as e:
         logger.error(f'Failed to get evaluation log: {str(e)}')
         return jsonify({'error': str(e)}), 500

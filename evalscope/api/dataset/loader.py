@@ -87,6 +87,7 @@ class RemoteDataLoader(DataLoader):
     def load(self) -> Dataset:
         import datasets
         from datasets import DownloadMode as HFDownloadMode
+        from datasets.features import Audio, Image
         from modelscope import MsDataset
         from modelscope.utils.constant import DownloadMode as MSDownloadMode
 
@@ -149,6 +150,13 @@ class RemoteDataLoader(DataLoader):
             if self.data_source != HubType.LOCAL:
                 dataset.save_to_disk(dataset_cache_dir)
 
+        # Disable auto-decoding for Image/Audio to keep raw bytes format (compat with datasets >= 3.0)
+        for col, feat in list(dataset.features.items()):
+            if isinstance(feat, Image):
+                dataset = dataset.cast_column(col, Image(decode=False))
+            elif isinstance(feat, Audio):
+                dataset = dataset.cast_column(col, Audio(decode=False))
+
         # shuffle if requested
         if self.shuffle:
             dataset = dataset.shuffle(seed=self.seed)
@@ -163,15 +171,15 @@ class RemoteDataLoader(DataLoader):
                 dataset = dataset.select(range(self.limit))
 
         # convert to list
-        dataset = dataset.to_list()
+        dataset_list = list(dataset)
 
         # repeat k times
         if self.repeats > 1:
-            dataset = [copy.deepcopy(item) for item in dataset for _ in range(self.repeats)]
+            dataset_list = [copy.deepcopy(item) for item in dataset_list for _ in range(self.repeats)]
 
         # return the dataset
         memory_dataset = MemoryDataset(
-            samples=data_to_samples(data=dataset, data_to_sample=data_to_sample),
+            samples=data_to_samples(data=dataset_list, data_to_sample=data_to_sample),
             name=Path(path).stem if Path(path).exists() else path,
             location=path,
         )

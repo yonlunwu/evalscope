@@ -1,13 +1,23 @@
 import argparse
 import json
 import os
-import sys
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Union
 
 from evalscope.constants import DEFAULT_WORK_DIR, VisualizerType
 from evalscope.utils import BaseArgument
+from evalscope.utils.logger import get_logger
+
+logger = get_logger()
+
+_OPENAI_API_ENDPOINT_MAP = {
+    'openai': 'chat/completions',
+    'openai_embedding': 'embeddings',
+    'embedding': 'embeddings',
+    'openai_rerank': 'reranks',
+    'rerank': 'reranks',
+}
 
 
 @dataclass
@@ -130,7 +140,7 @@ class Arguments(BaseArgument):
     """Whether to disable timestamp in output directory."""
 
     # Prompt settings
-    max_prompt_length: int = sys.maxsize
+    max_prompt_length: int = 131072
     """Maximum length of the prompt (in tokens if --tokenizer-path is set, otherwise in characters)."""
 
     min_prompt_length: int = 0
@@ -235,6 +245,18 @@ class Arguments(BaseArgument):
                 self.url = f'http://127.0.0.1:{self.port}/v1/completions'
             else:
                 self.url = f'http://127.0.0.1:{self.port}/v1/chat/completions'
+
+        # Auto-append endpoint path for openai-compatible APIs when URL has no known endpoint suffix
+        if self.api in _OPENAI_API_ENDPOINT_MAP:
+            _stripped = self.url.rstrip('/')
+            _expected_suffix = _OPENAI_API_ENDPOINT_MAP[self.api]
+            _known_endpoints = ('chat/completions', 'completions', 'embeddings', 'reranks')
+            if not any(_stripped.endswith('/' + ep) for ep in _known_endpoints):
+                self.url = _stripped + '/' + _expected_suffix
+                logger.warning(
+                    f'URL "{_stripped}" has no endpoint path, auto-appended "/{_expected_suffix}". '
+                    'If this is not intended, please specify the full URL explicitly.'
+                )
 
         # Set the apply_chat_template flag based on the URL
         if self.apply_chat_template is None:
@@ -346,7 +368,7 @@ def add_argument(parser: argparse.ArgumentParser):
     parser.add_argument('--enable-progress-tracker', action='store_true', default=False, help='Enable progress tracker')
 
     # Prompt settings
-    parser.add_argument('--max-prompt-length', type=int, default=sys.maxsize, help='Maximum input prompt length')
+    parser.add_argument('--max-prompt-length', type=int, default=131072, help='Maximum input prompt length')
     parser.add_argument('--min-prompt-length', type=int, default=0, help='Minimum input prompt length')
     parser.add_argument('--prefix-length', type=int, default=0, help='The prefix length')
     parser.add_argument('--prompt', type=str, required=False, default=None, help='Specified the request prompt')
